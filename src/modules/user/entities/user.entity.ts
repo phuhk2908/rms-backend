@@ -1,3 +1,4 @@
+import { RefreshToken } from '@modules/auth/entities/refresh-token.entity';
 import { Order } from '@modules/order/entities/order.entity';
 import { Reservation } from '@modules/reservation/entities/reservation.entity';
 import { BaseEntity } from '@shared/entities/base.entity';
@@ -29,4 +30,7 @@ export class User extends BaseEntity {
 
    @OneToMany(() => Reservation, (reservation) => reservation.createdBy)
    reservations: Reservation[];
+
+   @OneToMany(() => RefreshToken, (refreshToken) => refreshToken.user)
+   refreshTokens: RefreshToken[];
 }

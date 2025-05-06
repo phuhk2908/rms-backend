@@ -8,7 +8,7 @@ import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 
 @Injectable()
-export class JwtAuthGuard extends AuthGuard('jwt') {
+export class RefreshTokenGuard extends AuthGuard('jwt-refresh') {
    constructor(private reflector: Reflector) {
       super();
    }
@@ -21,20 +21,12 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       if (isPublic) {
          return true;
       }
-
-      const request = context.switchToHttp().getRequest();
-      const accessToken = request.cookies?.access_token;
-
-      if (accessToken) {
-         request.headers.authorization = `Bearer ${accessToken}`;
-      }
-
       return super.canActivate(context);
    }
 
    handleRequest(err, user) {
       if (err || !user) {
-         throw err || new UnauthorizedException('Invalid access token');
+         throw err || new UnauthorizedException('Invalid refresh token');
       }
       return user;
    }
