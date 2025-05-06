@@ -7,11 +7,12 @@ import {
    UseGuards,
 } from '@nestjs/common';
 import { KitchenDisplayService } from './kitchen-display.service';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
+
 import { UserRole } from '../../shared/enums/user-role.enum';
 import { OrderItemStatus } from '../../shared/enums/order-item-status.enum';
+import { Roles } from '@modules/auth/decorators/roles.decorator';
+import { JwtAuthGuard } from '@modules/auth/guards/jwt-auth.guard';
+import { RolesGuard } from '@modules/auth/guards/roles.guard';
 
 @Controller('kitchen-display')
 @UseGuards(JwtAuthGuard, RolesGuard)

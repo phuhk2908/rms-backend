@@ -11,10 +11,11 @@ import {
 import { MenuService } from './menu.service';
 import { CreateMenuDto } from './dto/create-menu.dto';
 import { UpdateMenuDto } from './dto/update-menu.dto';
-import { Roles } from '@modules/auth/decorators/roles.decorator';
-import { UserRole } from '@shared/enums/user-role.enum';
 import { CreateMenuCategoryDto } from './dto/create-menu-category.dto';
 import { UpdateMenuCategoryDto } from './dto/update-menu-category.dto';
+import { UserRole } from '@shared/enums/user-role.enum';
+
+import { Roles } from '@modules/auth/decorators/roles.decorator';
 
 @Controller('menu')
 export class MenuController {

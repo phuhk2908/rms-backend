@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { InventoryItem } from './entities/inventory-item.entity';
 import { Supplier } from '../supplier/entities/supplier.entity';
 import { Ingredient } from '../ingredient/entities/ingredient.entity';
+
 import { CreateInventoryItemDto } from './dto/create-inventory-item.dto';
 import { UpdateInventoryItemDto } from './dto/update-inventory-item.dto';
 import { CreateSupplierDto } from '../supplier/dto/create-supplier.dto';

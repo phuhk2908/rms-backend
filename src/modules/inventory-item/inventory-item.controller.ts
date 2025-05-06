@@ -15,10 +15,11 @@ import { CreateInventoryItemDto } from './dto/create-inventory-item.dto';
 import { UpdateInventoryItemDto } from './dto/update-inventory-item.dto';
 import { CreateSupplierDto } from '../supplier/dto/create-supplier.dto';
 import { UpdateSupplierDto } from '../supplier/dto/update-supplier.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
+
 import { UserRole } from '../../shared/enums/user-role.enum';
+import { Roles } from '@modules/auth/decorators/roles.decorator';
+import { JwtAuthGuard } from '@modules/auth/guards/jwt-auth.guard';
+import { RolesGuard } from '@modules/auth/guards/roles.guard';
 
 @Controller('inventory')
 @UseGuards(JwtAuthGuard, RolesGuard)

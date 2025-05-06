@@ -12,11 +12,12 @@ import {
 import { TableService } from './table.service';
 import { CreateTableDto } from './dto/create-table.dto';
 import { UpdateTableDto } from './dto/update-table.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
+
 import { UserRole } from '@shared/enums/user-role.enum';
 import { TableStatus } from '@shared/enums/table-status.enum';
+import { Roles } from '@modules/auth/decorators/roles.decorator';
+import { JwtAuthGuard } from '@modules/auth/guards/jwt-auth.guard';
+import { RolesGuard } from '@modules/auth/guards/roles.guard';
 
 @Controller('tables')
 @UseGuards(JwtAuthGuard, RolesGuard)

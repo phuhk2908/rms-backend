@@ -1,54 +1,79 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+   Injectable,
+   ConflictException,
+   NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-
-import { CreateUserDto } from './dto/create-user.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
-import * as bcrypt from 'bcryptjs';
 import { User } from './entities/user.entity';
+import { CreateUserDto } from './dto/create-user.dto';
+import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class UserService {
    constructor(
       @InjectRepository(User)
-      private readonly userRepository: Repository<User>,
+      private usersRepository: Repository<User>,
    ) {}
 
+   async findByEmail(email: string): Promise<User | undefined> {
+      return this.usersRepository.findOne({ where: { email } });
+   }
+
+   async findById(id: string): Promise<User | undefined> {
+      return this.usersRepository.findOne({ where: { id } });
+   }
+
    async create(createUserDto: CreateUserDto): Promise<User> {
-      const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
-      const user = this.userRepository.create({
+      const { email, password } = createUserDto;
+
+      // Check if user already exists
+      const userExists = await this.findByEmail(email);
+      if (userExists) {
+         throw new ConflictException('Email already in use');
+      }
+
+      // Hash password
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      // Create new user
+      const user = this.usersRepository.create({
          ...createUserDto,
          password: hashedPassword,
       });
-      return this.userRepository.save(user);
+
+      return this.usersRepository.save(user);
    }
 
-   async findAll(): Promise<User[]> {
-      return this.userRepository.find();
+   async updateRefreshToken(
+      userId: string,
+      refreshToken: string | null,
+   ): Promise<void> {
+      // If refreshToken is null, we're logging out
+      const hash = refreshToken ? await bcrypt.hash(refreshToken, 10) : null;
+
+      await this.usersRepository.update({ id: userId }, { refreshToken: hash });
    }
 
-   async findOne(id: string): Promise<User> {
-      const user = await this.userRepository.findOne({ where: { id } });
-      if (!user) {
-         throw new NotFoundException('User not found');
+   async getUserIfRefreshTokenMatches(
+      userId: string,
+      refreshToken: string,
+   ): Promise<User> {
+      const user = await this.findById(userId);
+
+      if (!user || !user.refreshToken) {
+         throw new NotFoundException('User not found or not logged in');
       }
+
+      const refreshTokenMatches = await bcrypt.compare(
+         refreshToken,
+         user.refreshToken,
+      );
+
+      if (!refreshTokenMatches) {
+         throw new NotFoundException('Invalid refresh token');
+      }
+
       return user;
-   }
-
-   async findByEmail(email: string): Promise<User | null> {
-      return this.userRepository.findOne({ where: { email } });
-   }
-
-   async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {
-      const user = await this.findOne(id);
-      if (updateUserDto.password) {
-         updateUserDto.password = await bcrypt.hash(updateUserDto.password, 10);
-      }
-      return this.userRepository.save({ ...user, ...updateUserDto });
-   }
-
-   async remove(id: string): Promise<void> {
-      const user = await this.findOne(id);
-      await this.userRepository.remove(user);
    }
 }

@@ -14,8 +14,8 @@ import { ReservationModule } from './modules/reservation/reservation.module';
 import { TableModule } from './modules/table/table.module';
 import { PaymentModule } from '@modules/payment/payment.module';
 import { NotificationModule } from '@modules/notification/notification.module';
-import { AuthModule } from './modules/auth/auth.module';
 import { KitchenDisplayModule } from '@modules/kitchen-display/kitchen-display.module';
+import { AuthModule } from '@modules/auth/auth.module';
 
 @Module({
    imports: [

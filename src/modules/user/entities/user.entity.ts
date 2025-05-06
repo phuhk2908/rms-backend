@@ -1,8 +1,8 @@
-import { RefreshToken } from '@modules/auth/entities/refresh-token.entity';
 import { Order } from '@modules/order/entities/order.entity';
 import { Reservation } from '@modules/reservation/entities/reservation.entity';
 import { BaseEntity } from '@shared/entities/base.entity';
 import { UserRole } from '@shared/enums/user-role.enum';
+import { Exclude } from 'class-transformer';
 import { Column, Entity, OneToMany } from 'typeorm';
 
 @Entity()
@@ -11,19 +11,20 @@ export class User extends BaseEntity {
    email: string;
 
    @Column()
+   @Exclude()
    password: string;
 
-   @Column()
+   @Column({ nullable: true })
    firstName: string;
 
-   @Column()
+   @Column({ nullable: true })
    lastName: string;
 
    @Column({ type: 'enum', enum: UserRole, default: UserRole.WAITER })
-   role: UserRole;
+   role?: UserRole;
 
    @Column({ nullable: true })
-   phoneNumber: string;
+   phoneNumber?: string;
 
    @OneToMany(() => Order, (order) => order.waiter)
    orders: Order[];
@@ -31,6 +32,7 @@ export class User extends BaseEntity {
    @OneToMany(() => Reservation, (reservation) => reservation.createdBy)
    reservations: Reservation[];
 
-   @OneToMany(() => RefreshToken, (refreshToken) => refreshToken.user)
-   refreshTokens: RefreshToken[];
+   @Column({ nullable: true })
+   @Exclude()
+   refreshToken: string;
 }

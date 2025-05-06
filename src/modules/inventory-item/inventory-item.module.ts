@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { InventoryItem } from './entities/inventory-item.entity';
 import { Supplier } from '../supplier/entities/supplier.entity';
@@ -10,7 +10,7 @@ import { IngredientModule } from '../ingredient/ingredient.module';
 @Module({
    imports: [
       TypeOrmModule.forFeature([InventoryItem, Supplier, Ingredient]),
-      IngredientModule,
+      forwardRef(() => IngredientModule),
    ],
    controllers: [InventoryItemController],
    providers: [InventoryItemService],

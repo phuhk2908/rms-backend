@@ -1,120 +1,126 @@
-import {
-   Controller,
-   Post,
-   Body,
-   UseGuards,
-   Request,
-   Res,
-   HttpCode,
-   Logger,
-} from '@nestjs/common';
-import { AuthService } from './auth.service';
-import { LocalAuthGuard } from './guards/local-auth.guard';
-import { LoginDto } from './dto/login.dto';
-import { RefreshTokenGuard } from './guards/refresh-token.guard';
-import { RegisterDto } from './dto/register.dto';
+import { Controller, Post, Body, UseGuards, Res, Get } from '@nestjs/common';
 import { Response } from 'express';
-import { Public } from './decorators/public.decorator';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { AuthService } from './auth.service';
+import { LoginDto, RegisterDto } from './dto/auth.dto';
+import {
+   LoginResponseDto,
+   LogoutResponseDto,
+   RefreshTokenResponseDto,
+   UserProfileDto,
+} from './dto/auth-response.dto';
 
+import { GetCurrentUser } from './decorators/get-current-user.decorator';
+import { Public } from './decorators/public.decorator';
+import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import {
+   ApiTags,
+   ApiOperation,
+   ApiResponse,
+   ApiBearerAuth,
+} from '@nestjs/swagger';
+import { User } from '@modules/user/entities/user.entity';
+
+@ApiTags('Authentication')
 @Controller('auth')
 export class AuthController {
-   private readonly logger = new Logger(AuthController.name);
-
-   constructor(private readonly authService: AuthService) {}
-
-   @Public()
-   @UseGuards(LocalAuthGuard)
-   @Post('login')
-   async login(
-      @Body() loginDto: LoginDto,
-      @Request() req,
-      @Res({ passthrough: true }) res: Response,
-   ): Promise<{ user: any; accessToken: string }> {
-      const { accessToken } = await this.authService.setCookies(
-         req.user,
-         req,
-         res,
-      );
-      return {
-         user: {
-            id: req.user.id,
-            email: req.user.email,
-            firstName: req.user.firstName,
-            lastName: req.user.lastName,
-            role: req.user.role,
-         },
-         accessToken, // Optional: Only for debugging, remove in production
-      };
-   }
+   constructor(private authService: AuthService) {}
 
    @Public()
    @Post('register')
-   async register(
-      @Body() registerDto: RegisterDto,
-      @Request() req,
-      @Res({ passthrough: true }) res: Response,
-   ): Promise<{ user: any; accessToken: string }> {
-      const user = await this.authService.register(registerDto);
-      const { accessToken } = await this.authService.setCookies(user, req, res);
-      return {
-         user: {
-            id: user.id,
-            email: user.email,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            role: user.role,
-         },
-         accessToken, // Optional: Only for debugging, remove in production
-      };
+   @ApiOperation({ summary: 'Register a new user' })
+   @ApiResponse({
+      status: 201,
+      description: 'User successfully registered',
+      type: UserProfileDto,
+   })
+   @ApiResponse({ status: 400, description: 'Bad request' })
+   async register(@Body() registerDto: RegisterDto) {
+      return this.authService.register(registerDto);
    }
 
    @Public()
-   @UseGuards(RefreshTokenGuard)
-   @Post('refresh')
-   async refresh(
-      @Request() req,
-      @Res({ passthrough: true }) res: Response,
-   ): Promise<{ accessToken: string }> {
-      const accessToken = await this.authService.refreshAccessToken(
-         req.user.refreshToken,
-         res,
-      );
-      return { accessToken }; // Optional: Only for debugging, remove in production
+   @Post('login')
+   @ApiOperation({ summary: 'Login user' })
+   @ApiResponse({
+      status: 200,
+      description: 'User successfully logged in',
+      type: LoginResponseDto,
+   })
+   @ApiResponse({ status: 401, description: 'Unauthorized' })
+   async login(
+      @Body() loginDto: LoginDto,
+      @Res({ passthrough: true }) response: Response,
+   ) {
+      const result = await this.authService.login(loginDto);
+      await this.setRefreshTokenCookie(response, result.user.id);
+      return result;
    }
 
-   @UseGuards(JwtAuthGuard)
+   @UseGuards(JwtRefreshGuard)
+   @Get('refresh')
+   @ApiBearerAuth()
+   @ApiOperation({ summary: 'Refresh access token' })
+   @ApiResponse({
+      status: 200,
+      description: 'Token successfully refreshed',
+      type: RefreshTokenResponseDto,
+   })
+   @ApiResponse({ status: 401, description: 'Unauthorized' })
+   async refreshTokens(
+      @GetCurrentUser('sub') userId: string,
+      @GetCurrentUser('refreshToken') refreshToken: string,
+      @Res({ passthrough: true }) response: Response,
+   ) {
+      const tokens = await this.authService.refreshTokens(userId, refreshToken);
+      await this.setRefreshTokenCookie(response, userId);
+      return tokens;
+   }
+
    @Post('logout')
-   @HttpCode(204)
+   @ApiBearerAuth()
+   @ApiOperation({ summary: 'Logout user' })
+   @ApiResponse({
+      status: 200,
+      description: 'User successfully logged out',
+      type: LogoutResponseDto,
+   })
    async logout(
-      @Request() req,
-      @Res({ passthrough: true }) res: Response,
-   ): Promise<void> {
-      const refreshToken = req.cookies?.refresh_token;
-      this.logger.debug(
-         `Attempting to logout with refresh token: ${refreshToken}`,
-      );
-      if (refreshToken) {
-         await this.authService.logout(refreshToken);
-         this.logger.debug('Successfully logged out and revoked refresh token');
-      } else {
-         this.logger.warn('No refresh token found in cookies during logout');
-      }
-      await this.authService.clearCookies(res);
+      @GetCurrentUser('sub') userId: string,
+      @Res({ passthrough: true }) response: Response,
+   ) {
+      await this.authService.logout(userId);
+      response.clearCookie('refresh_token', {
+         httpOnly: true,
+         secure: process.env.NODE_ENV === 'production',
+         sameSite: 'strict',
+         path: '/',
+      });
+      return { success: true };
    }
 
    @UseGuards(JwtAuthGuard)
-   @Post('logout/all')
-   @HttpCode(204)
-   async logoutAll(
-      @Request() req,
-      @Res({ passthrough: true }) res: Response,
-   ): Promise<void> {
-      this.logger.debug(
-         `Attempting to revoke all tokens for user: ${req.user.sub}`,
-      );
-      await this.authService.clearCookies(res);
-      await this.authService.revokeAllUserTokens(req.user.sub);
-      this.logger.debug('Successfully revoked all tokens');
+   @Get('profile')
+   @ApiBearerAuth()
+   @ApiOperation({ summary: 'Get user profile' })
+   @ApiResponse({
+      status: 200,
+      description: 'Returns the user profile',
+      type: UserProfileDto,
+   })
+   @ApiResponse({ status: 401, description: 'Unauthorized' })
+   getProfile(@GetCurrentUser() user: User) {
+      return user;
+   }
+
+   private async setRefreshTokenCookie(response: Response, userId: string) {
+      const tokens = await this.authService.getTokens(userId, '', '');
+      response.cookie('refresh_token', tokens.refreshToken, {
+         httpOnly: true,
+         secure: process.env.NODE_ENV === 'production',
+         sameSite: 'strict',
+         maxAge: 7 * 24 * 60 * 60 * 1000,
+         path: '/',
+      });
    }
 }

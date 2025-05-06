@@ -1,214 +1,113 @@
-import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { User } from '../../modules/user/entities/user.entity';
-import { RefreshToken } from '../../modules/auth/entities/refresh-token.entity';
-import { UserService } from '../user/user.service';
-import * as bcrypt from 'bcryptjs';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import { RegisterDto } from './dto/register.dto';
-import { Request, Response } from 'express';
+
+import { LoginDto, RegisterDto } from './dto/auth.dto';
+import * as bcrypt from 'bcryptjs';
+import { UserService } from '@modules/user/user.service';
+import { User } from '@modules/user/entities/user.entity';
 
 @Injectable()
 export class AuthService {
-   private readonly logger = new Logger(AuthService.name);
-
    constructor(
-      private readonly userService: UserService,
-      private readonly jwtService: JwtService,
-      @InjectRepository(RefreshToken)
-      private readonly refreshTokenRepository: Repository<RefreshToken>,
-      @InjectRepository(User)
-      private readonly userRepository: Repository<User>,
-      private readonly configService: ConfigService,
+      private userService: UserService,
+      private jwtService: JwtService,
+      private configService: ConfigService,
    ) {}
 
-   async validateUser(email: string, password: string): Promise<User | null> {
-      this.logger.debug(`Validating user with email: ${email}`);
+   async register(registerDto: RegisterDto): Promise<User> {
+      return this.userService.create(registerDto);
+   }
+
+   async login(loginDto: LoginDto) {
+      const { email, password } = loginDto;
+
+      // Find user by email
       const user = await this.userService.findByEmail(email);
-      if (user && (await bcrypt.compare(password, user.password))) {
-         this.logger.debug('User validated successfully');
-         return user;
+      if (!user) {
+         throw new UnauthorizedException('Invalid credentials');
       }
-      this.logger.warn('Invalid user credentials');
-      return null;
-   }
 
-   async generateAccessToken(user: User): Promise<string> {
-      this.logger.debug(`Generating access token for user: ${user.id}`);
-      const payload = {
-         email: user.email,
-         sub: user.id,
-         role: user.role,
-      };
-      return this.jwtService.sign(payload);
-   }
+      // Validate password
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+      if (!isPasswordValid) {
+         throw new UnauthorizedException('Invalid credentials');
+      }
 
-   async generateRefreshToken(user: User, req: Request): Promise<string> {
-      this.logger.debug(`Generating refresh token for user: ${user.id}`);
-      const refreshTokenExpires = this.configService.get<string>(
-         'REFRESH_TOKEN_EXPIRES_IN',
-      );
-      const expiresAt = new Date();
-      expiresAt.setSeconds(
-         expiresAt.getSeconds() + parseInt(refreshTokenExpires),
-      );
+      // Generate tokens
+      const tokens = await this.getTokens(user.id, user.email, user.role);
 
-      const token = await this.jwtService.sign(
-         { sub: user.id },
-         {
-            secret: this.configService.get<string>('REFRESH_TOKEN_SECRET'),
-            expiresIn: refreshTokenExpires,
-         },
-      );
-
-      await this.refreshTokenRepository.save({
-         token,
-         expiresAt,
-         user,
-         userAgent: req.headers['user-agent'] || '',
-         ipAddress: req.ip,
-      });
-
-      this.logger.debug('Refresh token generated successfully');
-      return token;
-   }
-
-   async login(user: User, req: Request) {
-      this.logger.debug(`Logging in user: ${user.id}`);
-      const accessToken = await this.generateAccessToken(user);
-      const refreshToken = await this.generateRefreshToken(user, req);
+      // Update refresh token in database
+      await this.userService.updateRefreshToken(user.id, tokens.refreshToken);
 
       return {
-         access_token: accessToken,
-         refresh_token: refreshToken,
-         user: {
-            id: user.id,
-            email: user.email,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            role: user.role,
-         },
+         user: this.excludePassword(user),
+         accessToken: tokens.accessToken,
+         // refreshToken is sent as an HTTP-only cookie in the controller
       };
    }
 
-   async register(registerDto: RegisterDto): Promise<User> {
-      this.logger.debug(
-         `Registering new user with email: ${registerDto.email}`,
+   async refreshTokens(userId: string, refreshToken: string) {
+      // Validate refresh token
+      const user = await this.userService.getUserIfRefreshTokenMatches(
+         userId,
+         refreshToken,
       );
-      const hashedPassword = await bcrypt.hash(registerDto.password, 10);
-      const user = this.userRepository.create({
-         ...registerDto,
-         password: hashedPassword,
-      });
-      return this.userRepository.save(user);
+
+      // Generate new tokens
+      const tokens = await this.getTokens(user.id, user.email, user.role);
+
+      // Update refresh token in database
+      await this.userService.updateRefreshToken(user.id, tokens.refreshToken);
+
+      return {
+         accessToken: tokens.accessToken,
+         // refreshToken is sent as an HTTP-only cookie in the controller
+      };
    }
 
-   async setCookies(
-      user: User,
-      req: Request,
-      res: Response,
-   ): Promise<{ accessToken: string }> {
-      this.logger.debug(`Setting auth cookies for user: ${user.id}`);
-      const accessToken = await this.generateAccessToken(user);
-      const refreshToken = await this.generateRefreshToken(user, req);
-
-      // Set HTTP-only cookies
-      res.cookie('access_token', accessToken, {
-         httpOnly: true,
-         secure: this.configService.get<string>('NODE_ENV') === 'production',
-         sameSite: 'lax', // Changed from 'strict' to 'lax' to allow cross-site requests
-      });
-
-      res.cookie('refresh_token', refreshToken, {
-         httpOnly: true,
-         secure: this.configService.get<string>('NODE_ENV') === 'production',
-         sameSite: 'lax', // Changed from 'strict' to 'lax' to allow cross-site requests
-      });
-
-      this.logger.debug('Auth cookies set successfully');
-      return { accessToken };
+   async logout(userId: string) {
+      // Remove refresh token from database
+      await this.userService.updateRefreshToken(userId, null);
+      return { success: true };
    }
 
-   async clearCookies(res: Response): Promise<void> {
-      this.logger.debug('Clearing auth cookies');
-      res.clearCookie('access_token', {
-         httpOnly: true,
-         secure: this.configService.get<string>('NODE_ENV') === 'production',
-         sameSite: 'lax',
-      });
-      res.clearCookie('refresh_token', {
-         httpOnly: true,
-         secure: this.configService.get<string>('NODE_ENV') === 'production',
-         sameSite: 'lax',
-      });
-      this.logger.debug('Successfully cleared auth cookies');
+   async getTokens(userId: string, email: string, role: string) {
+      const [accessToken, refreshToken] = await Promise.all([
+         this.jwtService.signAsync(
+            {
+               sub: userId,
+               email,
+               role,
+            },
+            {
+               secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
+               expiresIn: '15m',
+            },
+         ),
+         this.jwtService.signAsync(
+            {
+               sub: userId,
+               email,
+               role,
+            },
+            {
+               secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+               expiresIn: '7d',
+            },
+         ),
+      ]);
+
+      return {
+         accessToken,
+         refreshToken,
+      };
    }
 
-   async refreshAccessToken(
-      refreshToken: string,
-      res: Response,
-   ): Promise<string> {
-      this.logger.debug(
-         `Refreshing access token with refresh token: ${refreshToken}`,
-      );
-      const token = await this.refreshTokenRepository.findOne({
-         where: { token: refreshToken },
-         relations: ['user'],
-      });
-
-      if (!token || token.isRevoked || new Date() > token.expiresAt) {
-         this.logger.warn('Invalid refresh token');
-         throw new UnauthorizedException('Invalid refresh token');
-      }
-
-      const accessToken = await this.generateAccessToken(token.user);
-
-      res.cookie('access_token', accessToken, {
-         httpOnly: true,
-         secure: this.configService.get<string>('NODE_ENV') === 'production',
-         sameSite: 'lax',
-      });
-
-      this.logger.debug('Access token refreshed successfully');
-      return accessToken;
-   }
-
-   async logout(refreshToken: string): Promise<void> {
-      this.logger.debug(`Finding refresh token to revoke: ${refreshToken}`);
-
-      const token = await this.refreshTokenRepository.findOne({
-         where: { token: refreshToken },
-         relations: ['user'],
-      });
-
-      if (token) {
-         this.logger.debug(`Revoking refresh token for user: ${token.user.id}`);
-         token.isRevoked = true;
-         await this.refreshTokenRepository.save(token);
-         this.logger.debug('Successfully revoked refresh token');
-      } else {
-         this.logger.warn('No refresh token found to revoke');
-      }
-   }
-
-   async revokeAllUserTokens(userId: string): Promise<void> {
-      this.logger.debug(`Revoking all tokens for user: ${userId}`);
-      const user = await this.userRepository.findOne({
-         where: { id: userId },
-      });
-
-      if (user) {
-         await this.refreshTokenRepository
-            .createQueryBuilder()
-            .update()
-            .set({ isRevoked: true })
-            .where('user = :user', { user })
-            .execute();
-         this.logger.debug('Successfully revoked all tokens');
-      } else {
-         this.logger.warn('No user found to revoke tokens');
-      }
+   private excludePassword(user: User) {
+      const { password, refreshToken, ...result } = user;
+      void password;
+      void refreshToken;
+      return result;
    }
 }

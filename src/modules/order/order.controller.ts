@@ -14,13 +14,12 @@ import {
 import { OrderService } from './order.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-
-import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../../shared/enums/user-role.enum';
 import { OrderStatus } from '../../shared/enums/order-status.enum';
 import { OrderItemStatus } from '../../shared/enums/order-item-status.enum';
 import { CreatePaymentDto } from '@modules/payment/dto/create-payment.dto';
+import { Roles } from '@modules/auth/decorators/roles.decorator';
+import { JwtAuthGuard } from '@modules/auth/guards/jwt-auth.guard';
 
 @Controller('orders')
 @UseGuards(JwtAuthGuard)
