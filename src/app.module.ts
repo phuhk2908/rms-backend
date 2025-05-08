@@ -49,4 +49,4 @@ import { RecipeModule } from '@modules/recipe/recipe.module';
    providers: [AppService],
    exports: [AppService],
 })
-export class AppModule { }
+export class AppModule {}

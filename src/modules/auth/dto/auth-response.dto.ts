@@ -1,6 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { UserRole } from '@shared/enums/user-role.enum';
-import { IsUUID, IsEmail, IsString, IsEnum, IsOptional, IsDateString, IsBoolean } from 'class-validator';
+import {
+   IsUUID,
+   IsEmail,
+   IsString,
+   IsEnum,
+   IsOptional,
+   IsDateString,
+   IsBoolean,
+} from 'class-validator';
 export class UserProfileDto {
    @ApiProperty({
       description: 'The unique identifier of the user',
@@ -93,4 +101,4 @@ export class LogoutResponseDto {
    })
    @IsBoolean()
    success: boolean;
-} 
+}

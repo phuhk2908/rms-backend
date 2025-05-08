@@ -7,7 +7,7 @@ export const databaseConfig: TypeOrmModuleAsyncOptions = {
       type: 'postgres',
       url: config.get('DATABASE_URL'),
       entities: [path.join(__dirname, '../**/*.entity{.ts,.js}')],
-      synchronize: process.env.NODE_ENV !== 'production',
+      // synchronize: process.env.NODE_ENV !== 'production',
       logging: process.env.NODE_ENV === 'development',
       migrations: [path.join(__dirname, '../migrations/*{.ts,.js}')],
       migrationsRun: true,

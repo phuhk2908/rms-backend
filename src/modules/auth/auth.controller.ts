@@ -20,11 +20,15 @@ import {
    ApiBearerAuth,
 } from '@nestjs/swagger';
 import { User } from '@modules/user/entities/user.entity';
+import { UserService } from '@modules/user/user.service';
 
 @ApiTags('Authentication')
 @Controller('auth')
 export class AuthController {
-   constructor(private authService: AuthService) {}
+   constructor(
+      private authService: AuthService,
+      private userService: UserService,
+   ) {}
 
    @Public()
    @Post('register')
@@ -78,6 +82,7 @@ export class AuthController {
    }
 
    @Post('logout')
+   @UseGuards(JwtAuthGuard)
    @ApiBearerAuth()
    @ApiOperation({ summary: 'Logout user' })
    @ApiResponse({
@@ -114,7 +119,12 @@ export class AuthController {
    }
 
    private async setRefreshTokenCookie(response: Response, userId: string) {
-      const tokens = await this.authService.getTokens(userId, '', '');
+      const user = await this.userService.findById(userId);
+      const tokens = await this.authService.getTokens(
+         userId,
+         user.email,
+         user.role,
+      );
       response.cookie('refresh_token', tokens.refreshToken, {
          httpOnly: true,
          secure: process.env.NODE_ENV === 'production',
