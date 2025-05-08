@@ -5,4 +5,5 @@ export enum UserRole {
    CHEF = 'chef',
    BARTENDER = 'bartender',
    CASHIER = 'cashier',
+   CUSTOMER = 'customer'
 }

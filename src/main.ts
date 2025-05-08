@@ -1,12 +1,13 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe, VersioningType } from '@nestjs/common';
+import { Logger, ValidationPipe, VersioningType } from '@nestjs/common';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as cookieParser from 'cookie-parser';
 
 async function bootstrap() {
    const app = await NestFactory.create(AppModule);
+   const logger = new Logger()
 
    app.enableCors({
       origin: true,
@@ -44,5 +45,6 @@ async function bootstrap() {
 
    const port = process.env.PORT || 3000;
    await app.listen(port);
+   logger.log(`Server is running on port: http://localhost:${port}`)
 }
 bootstrap();

@@ -16,6 +16,9 @@ import { PaymentModule } from '@modules/payment/payment.module';
 import { NotificationModule } from '@modules/notification/notification.module';
 import { KitchenDisplayModule } from '@modules/kitchen-display/kitchen-display.module';
 import { AuthModule } from '@modules/auth/auth.module';
+import { IngredientModule } from '@modules/ingredient/ingredient.module';
+import { ReportModule } from '@modules/report/report.module';
+import { RecipeModule } from '@modules/recipe/recipe.module';
 
 @Module({
    imports: [
@@ -28,19 +31,22 @@ import { AuthModule } from '@modules/auth/auth.module';
       }),
       TypeOrmModule.forRootAsync(databaseConfig),
       UserModule,
+      AuthModule,
+      IngredientModule,
+      RecipeModule,
       MenuModule,
-      SupplierModule,
-      InventoryItemModule,
       OrderModule,
-      ReservationModule,
+      SupplierModule,
       TableModule,
+      ReservationModule,
+      InventoryItemModule,
       PaymentModule,
       NotificationModule,
-      AuthModule,
       KitchenDisplayModule,
+      ReportModule,
    ],
    controllers: [AppController],
    providers: [AppService],
    exports: [AppService],
 })
-export class AppModule {}
+export class AppModule { }

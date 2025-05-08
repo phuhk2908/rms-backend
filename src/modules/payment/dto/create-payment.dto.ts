@@ -1,29 +1,34 @@
 import {
-   IsUUID,
-   IsEnum,
-   IsNumber,
-   IsNotEmpty,
-   IsOptional,
-   IsString,
+  IsUUID,
+  IsEnum,
+  IsNumber,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
 } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 import { PaymentMethod } from '../../../shared/enums/payment-method.enum';
 
 export class CreatePaymentDto {
-   @IsUUID()
-   orderId: string;
+  @IsUUID()
+  @ApiProperty({ description: 'The ID of the associated order' })
+  orderId: string;
 
-   @IsEnum(PaymentMethod)
-   method: PaymentMethod;
+  @IsEnum(PaymentMethod)
+  @ApiProperty({ description: 'The payment method used', enum: PaymentMethod })
+  method: PaymentMethod;
 
-   @IsNumber()
-   @IsNotEmpty()
-   amount: number;
+  @IsNumber()
+  @IsNotEmpty()
+  amount: number;
 
-   @IsString()
-   @IsOptional()
-   transactionId?: string;
+  @IsString()
+  @ApiProperty({ description: 'The transaction ID (optional)', required: false })
+  @IsOptional()
+  transactionId?: string;
 
-   @IsString()
-   @IsOptional()
-   notes?: string;
+  @IsString()
+  @ApiProperty({ description: 'Any notes related to the payment (optional)', required: false })
+  @IsOptional()
+  notes?: string;
 }

@@ -60,10 +60,17 @@ export class RegisterDto {
    @IsString()
    lastName: string;
 
+   @ApiProperty({
+      description: 'The role of the user (optional)',
+      enum: UserRole,
+      example: UserRole.CASHIER,
+      required: false,
+   })
    @IsEnum(UserRole)
    @IsOptional()
    role: UserRole;
 
+   @ApiProperty({ description: 'The phone number of the user (optional)', example: '123-456-7890', required: false })
    @IsOptional()
    phoneNumber: string;
 }
