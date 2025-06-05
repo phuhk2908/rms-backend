@@ -1,0 +1,234 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- Enums ---
+enum Role {
+  ADMIN
+  MANAGER
+  WAITER
+  KITCHEN_STAFF
+  CUSTOMER // Added for potential future use with customer-facing apps
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY_FOR_PICKUP
+  OUT_FOR_DELIVERY
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
+enum OrderType {
+  DINE_IN
+  TAKEAWAY
+  DELIVERY
+}
+
+enum TableStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+  OUT_OF_SERVICE
+}
+
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED // Guest has been seated or reservation time passed
+  NO_SHOW
+}
+
+// --- Models ---
+model Staff {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  password  String // Hashed password
+  role      Role     @default(WAITER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reservationsMade Reservation[] @relation("StaffMadeReservation") // Reservations made by this staff
+  ordersTaken      Order[]       @relation("StaffTookOrder") // Orders taken by this staff
+
+  @@map("staff") // Explicitly map table name
+}
+
+model Category {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  description String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  menuItems   MenuItem[]
+
+  @@map("categories")
+}
+
+model MenuItem {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  price       Float // Current price
+  imageUrl    String?
+  isAvailable Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  orderItems OrderItem[]
+  recipes    Recipe[] // A menu item can be made from one or more recipes (e.g. variations)
+
+  @@map("menu_items")
+}
+
+model Ingredient {
+  id                String   @id @default(uuid())
+  name              String   @unique
+  unit              String // e.g., "kg", "liter", "pcs"
+  stockQuantity     Float    @default(0)
+  lowStockThreshold Float?   @default(0) // Alert when stockQuantity <= lowStockThreshold
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  recipeIngredients RecipeIngredient[]
+
+  @@map("ingredients")
+}
+
+model Recipe {
+  id           String   @id @default(uuid())
+  name         String // e.g., "Standard Burger Patty", "Spicy Mayo Sauce"
+  description  String?
+  instructions String?
+  yield        Float? // How many portions this recipe makes
+  yieldUnit    String? // Unit of the yield, e.g., "servings", "grams"
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  menuItemId String? // Optional: Directly link a recipe to a menu item if it's the primary recipe
+  menuItem   MenuItem? @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
+
+  recipeIngredients RecipeIngredient[]
+
+  @@map("recipes")
+}
+
+model RecipeIngredient {
+  id String @id @default(uuid())
+
+  recipeId     String
+  recipe       Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  ingredientId String
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict) // Don't delete ingredient if used in recipe
+
+  quantityNeeded Float // Quantity of the ingredient needed for one yield of the recipe
+  // unit is implicitly the Ingredient's unit
+
+  createdAt DateTime @default(now())
+
+  @@unique([recipeId, ingredientId]) // Ensure an ingredient is listed only once per recipe
+  @@map("recipe_ingredients")
+}
+
+model Table {
+  id          String      @id @default(uuid())
+  tableNumber String      @unique // e.g., "T1", "A5", "Bar Seat 1"
+  capacity    Int
+  status      TableStatus @default(AVAILABLE)
+  location    String? // e.g., "Patio", "Near Window", "Main Dining Hall"
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  reservations Reservation[]
+  orders       Order[] // Orders associated with this table (for DINE_IN)
+
+  @@map("tables")
+}
+
+model Reservation {
+  id              String            @id @default(uuid())
+  customerName    String
+  customerPhone   String?
+  customerEmail   String?
+  reservationTime DateTime
+  numberOfGuests  Int
+  status          ReservationStatus @default(PENDING)
+  notes           String? // Special requests, allergies etc.
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  tableId String?
+  table   Table?  @relation(fields: [tableId], references: [id], onDelete: SetNull) // Can be unassigned initially
+  staffId String? // Staff who took/confirmed the reservation
+  staff   Staff?  @relation("StaffMadeReservation", fields: [staffId], references: [id], onDelete: SetNull)
+  orderId String? @unique // If this reservation converted to an order
+  order   Order?
+
+  @@map("reservations")
+}
+
+model Order {
+  id          String      @id @default(uuid())
+  orderNumber String?     @unique @default(cuid()) // Auto-generated, more user-friendly ID
+  orderType   OrderType
+  status      OrderStatus @default(PENDING)
+  totalAmount Float       @default(0) // Calculated from order items
+  notes       String? // Customer notes for the order
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Relationships
+  staffId       String? // Staff who created or is managing the order
+  staff         Staff?       @relation("StaffTookOrder", fields: [staffId], references: [id], onDelete: SetNull)
+  tableId       String? // For DINE_IN orders
+  table         Table?       @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  reservationId String?      @unique // If this order originated from a reservation
+  reservation   Reservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+
+  orderItems OrderItem[]
+
+  paymentId     String? // Placeholder for payment integration
+  paymentStatus String? // e.g., PENDING, PAID, FAILED
+
+  customerName    String? // For takeaway/delivery if not tied to a staff/reservation
+  customerPhone   String?
+  deliveryAddress String?
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id String @id @default(uuid())
+
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Restrict) // Don't delete menu item if it's in an order
+
+  quantity     Int
+  priceAtOrder Float // Price of the menu item at the time of order
+  subTotal     Float // quantity * priceAtOrder
+  notes        String? // e.g., "no onions", "extra spicy"
+
+  createdAt DateTime @default(now())
+
+  @@map("order_items")
+}
