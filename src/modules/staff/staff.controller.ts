@@ -1,138 +1,59 @@
-import {
-  Controller,
-  Get,
-  Body,
-  Patch,
-  Param,
-  Delete,
-  UseGuards,
-  ParseUUIDPipe,
-  Logger,
-  Req,
-  NotFoundException,
-} from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiBearerAuth,
-  ApiParam,
-} from '@nestjs/swagger';
-import { Role } from '@prisma/client';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
+import { Controller, Get, Body, Patch, Param, Delete, UseGuards, ParseUUIDPipe, NotFoundException, Post } from '@nestjs/common';
 import { StaffService } from './staff.service';
 import { UpdateStaffDto } from './dto/update-staff.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { Role } from '@prisma/client';
+import { ApiTags, ApiCookieAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { CreateStaffDto } from './dto/create-staff.dto';
 
 @ApiTags('Staff Management')
-@ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard, RolesGuard)
+@ApiCookieAuth()
 @Controller('staff')
 export class StaffController {
-  private readonly logger = new Logger(StaffController.name);
+  constructor(private readonly staffService: StaffService) { }
 
-  constructor(private readonly staffService: StaffService) {}
+  @Post()
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Tạo tài khoản nhân viên mới (Admin only)' })
+  @ApiResponse({ status: 201, description: 'Tài khoản đã được tạo thành công.' })
+  @ApiResponse({ status: 403, description: 'Không có quyền truy cập.' })
+  @ApiResponse({ status: 409, description: 'Email đã tồn tại.' })
+  create(@Body() createStaffDto: CreateStaffDto) {
+    return this.staffService.createByAdmin(createStaffDto);
+  }
 
   @Get()
   @Roles(Role.ADMIN, Role.MANAGER)
-  @ApiOperation({ summary: 'Get all staff members (Admin/Manager only)' })
-  @ApiResponse({ status: 200, description: 'List of all staff members.' })
-  @ApiResponse({ status: 403, description: 'Forbidden - Insufficient role.' })
-  findAll(@Req() req) {
-    // Added @Req to access req.user for logging
-    this.logger.log(
-      `GET /staff - attempt to find all staff by user: ${req.user?.email || 'unknown (JWT valid, user details missing)'}`,
-    );
+  @ApiOperation({ summary: 'Lấy danh sách tất cả nhân viên (Admin/Manager only)' })
+  findAll() {
     return this.staffService.findAll();
   }
 
   @Get(':id')
   @Roles(Role.ADMIN, Role.MANAGER)
-  @ApiOperation({
-    summary: 'Get a specific staff member by ID (Admin/Manager only)',
-  })
-  @ApiParam({
-    name: 'id',
-    type: 'string',
-    format: 'uuid',
-    description: 'Staff member ID',
-  })
-  @ApiResponse({ status: 200, description: 'Staff member details.' })
-  @ApiResponse({ status: 403, description: 'Forbidden - Insufficient role.' })
-  @ApiResponse({
-    status: 404,
-    description: 'Not Found - Staff member not found.',
-  })
-  async findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req) {
-    // Added @Req
-    this.logger.log(
-      `GET /staff/${id} - attempt to find one staff by user: ${req.user?.email || 'unknown'}`,
-    );
+  @ApiOperation({ summary: 'Lấy thông tin một nhân viên theo ID (Admin/Manager only)' })
+  async findOne(@Param('id', ParseUUIDPipe) id: string) {
     const staff = await this.staffService.findOne(id);
     if (!staff) {
-      throw new NotFoundException(`Staff member with ID '${id}' not found.`);
+      throw new NotFoundException(`Nhân viên với ID '${id}' không tồn tại.`);
     }
     return staff;
   }
 
   @Patch(':id')
   @Roles(Role.ADMIN, Role.MANAGER)
-  @ApiOperation({ summary: 'Update a staff member (Admin/Manager only)' })
-  @ApiParam({
-    name: 'id',
-    type: 'string',
-    format: 'uuid',
-    description: 'Staff member ID',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Staff member updated successfully.',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Bad Request - Invalid input data.',
-  })
-  @ApiResponse({ status: 403, description: 'Forbidden - Insufficient role.' })
-  @ApiResponse({
-    status: 404,
-    description: 'Not Found - Staff member not found.',
-  })
-  update(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() updateStaffDto: UpdateStaffDto,
-    @Req() req,
-  ) {
-    // Added @Req
-    this.logger.log(
-      `PATCH /staff/${id} - attempt to update staff by user: ${req.user?.email || 'unknown'}`,
-    );
+  @ApiOperation({ summary: 'Cập nhật thông tin nhân viên (Admin/Manager only)' })
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() updateStaffDto: UpdateStaffDto) {
     return this.staffService.update(id, updateStaffDto);
   }
 
   @Delete(':id')
   @Roles(Role.ADMIN)
-  @ApiOperation({ summary: 'Delete a staff member (Admin only)' })
-  @ApiParam({
-    name: 'id',
-    type: 'string',
-    format: 'uuid',
-    description: 'Staff member ID',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Staff member deleted successfully.',
-  })
-  @ApiResponse({ status: 403, description: 'Forbidden - Insufficient role.' })
-  @ApiResponse({
-    status: 404,
-    description: 'Not Found - Staff member not found.',
-  })
-  remove(@Param('id', ParseUUIDPipe) id: string, @Req() req) {
-    // Added @Req
-    this.logger.log(
-      `DELETE /staff/${id} - attempt to delete staff by user: ${req.user?.email || 'unknown'}`,
-    );
+  @ApiOperation({ summary: 'Xóa một nhân viên (Admin only)' })
+  remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.staffService.remove(id);
   }
 }

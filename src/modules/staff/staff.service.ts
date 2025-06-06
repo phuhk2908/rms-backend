@@ -1,187 +1,103 @@
-import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
-  InternalServerErrorException,
-  Logger,
-} from '@nestjs/common';
-import { Staff, Role } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
 import { CreateStaffDto } from './dto/create-staff.dto';
 import { UpdateStaffDto } from './dto/update-staff.dto';
+import { Role, Staff } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
+import { EmailService } from '../email/email.service';
+import { PrismaService } from 'src/prisma/prisma.service';
 
 @Injectable()
 export class StaffService {
   private readonly logger = new Logger(StaffService.name);
   private readonly saltRounds = 10;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly emailService: EmailService,
+  ) { }
 
-  async create(
-    createStaffDto: CreateStaffDto,
-  ): Promise<Omit<Staff, 'password'>> {
-    this.logger.log(
-      `Attempting to create staff with email: ${createStaffDto.email}`,
-    );
+  async createByAdmin(createStaffDto: CreateStaffDto): Promise<Omit<Staff, 'password'>> {
     const { email, password, name, role } = createStaffDto;
-
-    const existingStaff = await this.prisma.staff.findUnique({
-      where: { email },
-    });
+    const existingStaff = await this.prisma.staff.findUnique({ where: { email } });
     if (existingStaff) {
-      this.logger.warn(`Staff creation failed: Email ${email} already exists.`);
-      throw new ConflictException(
-        `Staff with email '${email}' already exists.`,
-      );
+      throw new ConflictException(`Tài khoản với email '${email}' đã tồn tại.`);
     }
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    const hashedPassword = await bcrypt.hash(password, this.saltRounds);
-    this.logger.debug(`Password hashed for email: ${email}`);
+    // Admin có thể gán bất kỳ vai trò nào, nếu không gán sẽ mặc định là CUSTOMER
+    const newStaff = await this.prisma.staff.create({
+      data: {
+        email,
+        password: hashedPassword,
+        name,
+        role: role || Role.CUSTOMER, // Admin có thể gán vai trò
+        isVerified: true, // Xác thực ngay lập tức
+      },
+    });
 
-    try {
-      const newStaff = await this.prisma.staff.create({
-        data: {
-          email,
-          password: hashedPassword,
-          name,
-          role: role || Role.WAITER,
-        },
-      });
-      this.logger.log(
-        `Staff created successfully: ${newStaff.email} (ID: ${newStaff.id})`,
-      );
-      const { password: _, ...result } = newStaff;
-      return result;
-    } catch (error) {
-      this.logger.error(`Error creating staff: ${error.message}`, error.stack);
-      if (error.code === 'P2002') {
-        throw new ConflictException(
-          `Staff with email '${email}' already exists (database constraint).`,
-        );
-      }
-      throw new InternalServerErrorException(
-        'Could not create staff member. Please try again later.',
-      );
-    }
+    this.logger.log(`Admin đã tạo tài khoản cho ${newStaff.email} (ID: ${newStaff.id}).`);
+    const { password: _, ...result } = newStaff;
+    return result;
   }
 
+  // --- FIXED ---
   async findAll(): Promise<Omit<Staff, 'password'>[]> {
     this.logger.log('Fetching all staff members.');
     const staffList = await this.prisma.staff.findMany();
+    // Chỉ loại bỏ trường "password"
     return staffList.map(({ password, ...staff }) => staff);
   }
 
+  // --- FIXED ---
   async findOne(id: string): Promise<Omit<Staff, 'password'> | null> {
     this.logger.log(`Fetching staff member with ID: ${id}`);
     const staff = await this.prisma.staff.findUnique({ where: { id } });
     if (!staff) {
-      this.logger.warn(`Staff member with ID: ${id} not found.`);
       return null;
     }
+    // Chỉ loại bỏ trường "password"
     const { password, ...result } = staff;
     return result;
   }
 
   async findOneByEmail(email: string): Promise<Staff | null> {
     this.logger.debug(`Fetching staff member by email (internal): ${email}`);
-    const staff = await this.prisma.staff.findUnique({ where: { email } });
-    if (!staff) {
-      this.logger.debug(
-        `Staff member with email: ${email} not found (internal).`,
-      );
-      return null;
-    }
-    return staff;
+    return this.prisma.staff.findUnique({ where: { email } });
   }
 
-  async update(
-    id: string,
-    updateStaffDto: UpdateStaffDto,
-  ): Promise<Omit<Staff, 'password'>> {
-    this.logger.log(`Attempting to update staff member with ID: ${id}`);
-    const { email, name, role, password: newPassword } = updateStaffDto;
-
-    const staffToUpdate = await this.prisma.staff.findUnique({ where: { id } });
-    if (!staffToUpdate) {
-      this.logger.warn(`Update failed: Staff member with ID: ${id} not found.`);
-      throw new NotFoundException(`Staff member with ID '${id}' not found.`);
+  async update(id: string, dto: UpdateStaffDto): Promise<Omit<Staff, 'password'>> {
+    const { password, ...data } = dto;
+    if (password) {
+      data['password'] = await bcrypt.hash(password, this.saltRounds);
     }
-
-    if (email && email !== staffToUpdate.email) {
-      const existingStaffWithNewEmail = await this.prisma.staff.findUnique({
-        where: { email },
-      });
-      if (existingStaffWithNewEmail) {
-        this.logger.warn(
-          `Update failed: New email ${email} for staff ID ${id} already exists.`,
-        );
-        throw new ConflictException(
-          `Staff with email '${email}' already exists.`,
-        );
-      }
-    }
-
-    let hashedPassword = staffToUpdate.password;
-    if (newPassword) {
-      hashedPassword = await bcrypt.hash(newPassword, this.saltRounds);
-      this.logger.debug(`New password hashed for staff ID: ${id}`);
-    }
-
     try {
       const updatedStaff = await this.prisma.staff.update({
         where: { id },
-        data: {
-          email: email || staffToUpdate.email,
-          name: name || staffToUpdate.name,
-          role: role || staffToUpdate.role,
-          password: hashedPassword,
-        },
+        data,
       });
-      this.logger.log(`Staff member with ID: ${id} updated successfully.`);
-      const { password, ...result } = updatedStaff;
+      // Chỉ loại bỏ trường "password"
+      const { password: _, ...result } = updatedStaff;
       return result;
     } catch (error) {
-      this.logger.error(
-        `Error updating staff ID ${id}: ${error.message}`,
-        error.stack,
-      );
-      if (error.code === 'P2002') {
-        throw new ConflictException(
-          `Cannot update staff: the new email '${email}' may already be in use.`,
-        );
-      }
       if (error.code === 'P2025') {
-        throw new NotFoundException(
-          `Staff member with ID '${id}' not found during update operation.`,
-        );
+        throw new NotFoundException(`Nhân viên với ID '${id}' không tồn tại.`);
       }
-      throw new InternalServerErrorException(
-        'Could not update staff member. Please try again later.',
-      );
+      throw error;
     }
   }
 
   async remove(id: string): Promise<Omit<Staff, 'password'>> {
-    this.logger.log(`Attempting to remove staff member with ID: ${id}`);
     try {
-      const staffToDelete = await this.prisma.staff.delete({
-        where: { id },
-      });
-      this.logger.log(`Staff member with ID: ${id} removed successfully.`);
-      const { password, ...result } = staffToDelete;
+      const deletedStaff = await this.prisma.staff.delete({ where: { id } });
+      // Chỉ loại bỏ trường "password"
+      const { password, ...result } = deletedStaff;
       return result;
     } catch (error) {
-      this.logger.error(
-        `Error removing staff ID ${id}: ${error.message}`,
-        error.stack,
-      );
       if (error.code === 'P2025') {
-        throw new NotFoundException(`Staff member with ID '${id}' not found.`);
+        throw new NotFoundException(`Nhân viên với ID '${id}' không tồn tại.`);
       }
-      throw new InternalServerErrorException(
-        'Could not remove staff member. Please try again later.',
-      );
+      throw error;
     }
   }
 }

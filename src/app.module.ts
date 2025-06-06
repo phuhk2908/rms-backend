@@ -4,13 +4,14 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
-import { StaffModule } from './modules/staff/staff.module';
-import { MenuModule } from './modules/menu/menu.module';
+import { EmailModule } from './modules/email/email.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
-import { RecipeModule } from './modules/recipe/recipe.module';
-import { TableModule } from './modules/table/table.module';
-import { ReservationModule } from './modules/reservation/reservation.module';
+import { MenuModule } from './modules/menu/menu.module';
 import { OrderModule } from './modules/order/order.module';
+import { RecipeModule } from './modules/recipe/recipe.module';
+import { ReservationModule } from './modules/reservation/reservation.module';
+import { StaffModule } from './modules/staff/staff.module';
+import { TableModule } from './modules/table/table.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { OrderModule } from './modules/order/order.module';
     PrismaModule,
     AuthModule,
     StaffModule,
+    EmailModule,
     MenuModule,
     InventoryModule,
     RecipeModule,
@@ -31,4 +33,4 @@ import { OrderModule } from './modules/order/order.module';
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule { }

@@ -1,18 +1,15 @@
-import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger, BadRequestException, ConflictException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { StaffService } from '../staff/staff.service';
 import * as bcrypt from 'bcrypt';
-import { Staff, Role } from '@prisma/client';
-import { ConfigService } from '@nestjs/config';
+import * as crypto from 'crypto';
 import { LoginDto } from './dto/login.dto';
-
-export interface JwtPayload {
-  sub: string;
-  email: string;
-  role: Role;
-}
-
-type SafeStaff = Omit<Staff, 'password'>;
+import { Staff, Role } from '@prisma/client';
+import { EmailService } from '../email/email.service';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { VerifyAccountDto } from './dto/verify-account.dto';
+import { PrismaService } from 'src/prisma/prisma.service';
+import { RegisterDto } from './dto/register.dto';
 
 @Injectable()
 export class AuthService {
@@ -21,68 +18,149 @@ export class AuthService {
   constructor(
     private readonly staffService: StaffService,
     private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
-  ) {}
+    private readonly prisma: PrismaService,
+    private readonly emailService: EmailService,
+  ) { }
 
-  async validateStaff(
-    email: string,
-    pass: string,
-  ): Promise<Omit<Staff, 'password'> | null> {
-    this.logger.debug(`Attempting to validate staff with email: ${email}`);
-    const staff = await this.staffService.findOneByEmail(email);
+  async registerCustomer(registerDto: RegisterDto): Promise<{ message: string }> {
+    const { email, password, name } = registerDto;
+    this.logger.log(`Yêu cầu đăng ký của khách hàng cho email: ${email}`);
 
-    if (staff) {
-      this.logger.debug(`Staff found: ${staff.email}, role: ${staff.role}`);
-      const isPasswordMatching = await bcrypt.compare(pass, staff.password);
-      if (isPasswordMatching) {
-        this.logger.debug(`Password matches for staff: ${email}`);
-        const { password, ...result } = staff;
-        return result;
-      } else {
-        this.logger.warn(`Password mismatch for staff: ${email}`);
+    const existingStaff = await this.prisma.staff.findUnique({ where: { email } });
+    if (existingStaff) {
+      this.logger.warn(`Đăng ký thất bại: Email ${email} đã tồn tại.`);
+      if (!existingStaff.isVerified) {
+        throw new ConflictException(`Tài khoản với email '${email}' đã tồn tại nhưng chưa được xác thực.`);
       }
-    } else {
-      this.logger.warn(`Staff not found with email: ${email}`);
+      throw new ConflictException(`Tài khoản với email '${email}' đã tồn tại.`);
     }
-    return null;
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const otp = crypto.randomInt(100000, 999999).toString();
+    const expiryDate = new Date(new Date().getTime() + 10 * 60000); // 10 phút
+
+    const newStaff = await this.prisma.staff.create({
+      data: {
+        email,
+        password: hashedPassword,
+        name,
+        role: Role.CUSTOMER, // Mặc định vai trò là CUSTOMER
+        isVerified: false,   // Cần xác thực email
+        verificationToken: otp,
+        verificationExpires: expiryDate,
+      },
+    });
+
+    // Gửi email xác thực
+    await this.emailService.sendAccountVerificationOtp(newStaff, otp);
+
+    return { message: 'Đăng ký thành công. Vui lòng kiểm tra email để xác thực tài khoản.' };
+  }
+
+  async validateStaff(email: string, pass: string): Promise<Omit<Staff, 'password'>> {
+    const staff = await this.staffService.findOneByEmail(email);
+    if (!staff) {
+      throw new UnauthorizedException('Invalid credentials.');
+    }
+    if (!staff.isVerified) {
+      throw new UnauthorizedException('Account not verified. Please check your email for the verification OTP.');
+    }
+    const isPasswordMatching = await bcrypt.compare(pass, staff.password);
+    if (!isPasswordMatching) {
+      throw new UnauthorizedException('Invalid credentials.');
+    }
+    const { password, ...result } = staff;
+    return result;
   }
 
   async login(loginDto: LoginDto) {
-    this.logger.log(`Login attempt for email: ${loginDto.email}`);
     const staff = await this.validateStaff(loginDto.email, loginDto.password);
-    if (!staff) {
-      this.logger.warn(
-        `Unauthorized login attempt for email: ${loginDto.email}`,
-      );
-      throw new UnauthorizedException(
-        'Invalid credentials. Please check email and password.',
-      );
-    }
-
-    const payload: JwtPayload = {
-      sub: staff.id,
-      email: staff.email,
-      role: staff.role,
-    };
-    this.logger.log(`Login successful for ${staff.email}, generating token.`);
-    return {
-      message: 'Login successful',
-      accessToken: this.jwtService.sign(payload),
-      staff: {
-        id: staff.id,
-        email: staff.email,
-        name: staff.name,
-        role: staff.role,
-      },
-    };
+    const payload = { sub: staff.id, email: staff.email, role: staff.role };
+    const accessToken = this.jwtService.sign(payload);
+    return { accessToken, staff };
   }
 
-  async verifyPayload(payload: JwtPayload): Promise<SafeStaff | null> {
-    const staff = await this.staffService.findOne(payload.sub);
-    if (!staff || staff.role !== payload.role) {
-      return null;
+  async verifyAccount(verifyDto: VerifyAccountDto) {
+    const { email, token } = verifyDto;
+    this.logger.log(`Đang xác thực tài khoản cho email: ${email}`);
+    const staff = await this.prisma.staff.findFirst({
+      where: {
+        email,
+        verificationToken: token,
+        verificationExpires: { gt: new Date() },
+      },
+    });
+    if (!staff) {
+      throw new BadRequestException('Mã OTP không hợp lệ hoặc đã hết hạn.');
     }
+    await this.prisma.staff.update({
+      where: { id: staff.id },
+      data: {
+        isVerified: true,
+        verificationToken: null,
+        verificationExpires: null,
+      },
+    });
+    return { message: 'Tài khoản của bạn đã được xác thực thành công.' };
+  }
 
-    return staff;
+  async resendVerification(email: string) {
+    this.logger.log(`Yêu cầu gửi lại mã xác thực cho email: ${email}`);
+    const staff = await this.prisma.staff.findUnique({ where: { email } });
+    if (!staff) {
+      return { message: 'Nếu email tồn tại và chưa xác thực, mã OTP mới đã được gửi.' };
+    }
+    if (staff.isVerified) {
+      throw new ConflictException('Tài khoản này đã được xác thực.');
+    }
+    const otp = crypto.randomInt(100000, 999999).toString();
+    const expiryDate = new Date(new Date().getTime() + 10 * 60000); // 10 minutes
+    await this.prisma.staff.update({
+      where: { email },
+      data: { verificationToken: otp, verificationExpires: expiryDate },
+    });
+    await this.emailService.sendAccountVerificationOtp(staff, otp);
+    return { message: 'Nếu email tồn tại và chưa xác thực, mã OTP mới đã được gửi.' };
+  }
+
+  async forgotPassword(email: string) {
+    this.logger.log(`Yêu cầu quên mật khẩu cho email: ${email}`);
+    const staff = await this.prisma.staff.findUnique({ where: { email } });
+    if (!staff) {
+      return { message: 'Nếu email tồn tại, mã OTP đặt lại mật khẩu đã được gửi.' };
+    }
+    const otp = crypto.randomInt(100000, 999999).toString();
+    const expiryDate = new Date(new Date().getTime() + 10 * 60000); // 10 minutes
+    await this.prisma.staff.update({
+      where: { email },
+      data: { passwordResetToken: otp, passwordResetExpires: expiryDate },
+    });
+    await this.emailService.sendPasswordResetOtp(staff, otp);
+    return { message: 'Nếu email tồn tại, mã OTP đặt lại mật khẩu đã được gửi.' };
+  }
+
+  async resetPassword(resetDto: ResetPasswordDto) {
+    const { email, token, password } = resetDto;
+    this.logger.log(`Đang đặt lại mật khẩu cho email: ${email}`);
+    const staff = await this.prisma.staff.findFirst({
+      where: {
+        email,
+        passwordResetToken: token,
+        passwordResetExpires: { gt: new Date() },
+      },
+    });
+    if (!staff) {
+      throw new BadRequestException('Mã OTP không hợp lệ hoặc đã hết hạn.');
+    }
+    const hashedPassword = await bcrypt.hash(password, 10);
+    await this.prisma.staff.update({
+      where: { id: staff.id },
+      data: {
+        password: hashedPassword,
+        passwordResetToken: null,
+        passwordResetExpires: null,
+      },
+    });
+    return { message: 'Mật khẩu đã được đặt lại thành công.' };
   }
 }
