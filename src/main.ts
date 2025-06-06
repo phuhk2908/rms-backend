@@ -4,6 +4,7 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as cookieParser from 'cookie-parser';
+import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -30,6 +31,8 @@ async function bootstrap() {
     },
   }));
 
+  app.useGlobalInterceptors(new TransformInterceptor());
+
   // Cấu hình Swagger (OpenAPI)
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Restaurant Management System API')
@@ -50,8 +53,9 @@ async function bootstrap() {
 
   logger.log('Swagger API documentation available at /api-docs');
 
+
   const port = configService.get<number>('PORT') || 3000;
   await app.listen(port);
-  logger.log(`Application is running on: http://localhost:${port}`);
+  logger.log(`Application is running on: ${await app.getUrl()}`);
 }
 bootstrap();

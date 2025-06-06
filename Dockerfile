@@ -1,10 +1,3 @@
-# ======================================================================
-# Dockerfile cho ứng dụng NestJS - Tối ưu cho Production
-# ======================================================================
-
-# --- Giai đoạn 1: Builder ---
-# Giai đoạn này cài đặt tất cả dependencies (bao gồm cả devDependencies)
-# để build ứng dụng và tạo Prisma Client.
 FROM node:20-alpine AS builder
 
 WORKDIR /app
