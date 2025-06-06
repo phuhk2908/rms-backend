@@ -57,7 +57,7 @@ EXPOSE 3000
 # "npx prisma migrate deploy" sẽ áp dụng các migration chưa được chạy.
 # Sau đó, "node dist/main.js" sẽ khởi động server.
 # Đây là cách phổ biến để đảm bảo database luôn được cập nhật trước khi app chạy.
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
+CMD ["npm run build", "npx prisma migrate deploy && node dist/main.js"]
 
 # --- Ghi chú ---
 # Để build image, chạy lệnh sau ở thư mục gốc của dự án NestJS:
